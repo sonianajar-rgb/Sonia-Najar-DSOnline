@@ -1,0 +1,172 @@
+
+def normalizar_email(texto):
+    # Elimina todos los espacios y convierte a minúsculas
+    return "".join(texto.split()).lower()
+
+
+def parsear_hoja(texto):
+    filas = []
+
+    for linea in texto.splitlines():
+        if not linea.strip():
+            continue
+
+        campos = linea.split(";")
+
+        if len(campos) != 3:
+            continue
+
+        nombre, email, programa = campos
+
+        persona = {
+            "nombre": nombre.strip(),
+            "email": normalizar_email(email),
+            "programa": programa.strip()
+        }
+
+        filas.append(persona)
+
+    return filas
+
+
+class Cohorte:
+    def __init__(self, codigo, programa):
+        self.codigo = codigo
+        self.programa = programa
+        self.miembros = {}
+        self.rechazos = []
+
+    def alta(self, persona):
+        email = normalizar_email(persona["email"])
+
+        # Comprobar que la persona pertenece al programa
+        if persona["programa"] != self.programa:
+            self.rechazos.append({
+                "email": email,
+                "motivo": "otro_programa"
+            })
+            return False
+
+        # Comprobar si el correo ya está registrado
+        if email in self.miembros:
+            self.rechazos.append({
+                "email": email,
+                "motivo": "duplicado"
+            })
+            return False
+
+        # Guardar a la persona usando el correo como clave
+        persona_limpia = {
+            "nombre": persona["nombre"].strip(),
+            "email": email,
+            "programa": persona["programa"]
+        }
+
+        self.miembros[email] = persona_limpia
+
+        return True
+
+    def emails(self):
+        return set(self.miembros.keys())
+
+    def total(self):
+        return len(self.miembros)
+
+    def __str__(self):
+        return (
+            f"Cohorte {self.codigo} - "
+            f"{self.programa}: {self.total()} miembros"
+        )
+
+
+def inscribir(registro, altas):
+    registradas = []
+    fuera = []
+
+    # Crear una cohorte por cada programa abierto
+    for programa, codigo in COHORTES.items():
+        registro[codigo] = Cohorte(codigo, programa)
+
+    # Procesar todas las personas
+    for persona in altas:
+        programa = persona["programa"]
+
+        # Buscar el código de cohorte de su programa
+        if programa not in COHORTES:
+            fuera.append(persona)
+            continue
+
+        codigo = COHORTES[programa]
+        cohorte = registro[codigo]
+
+        if cohorte.alta(persona):
+            registradas.append(persona)
+
+    return registradas, fuera
+
+
+# ----------------------------------
+# CONSTRUIR EL REGISTRO
+# ----------------------------------
+
+registro = {}
+
+todas = list(ALTAS_PREVIAS) + parsear_hoja(HOJA_NUEVAS)
+
+registradas, sin_cohorte = inscribir(registro, todas)
+
+
+# ----------------------------------
+# PROGRAMAS SIN COHORTE
+# ----------------------------------
+
+programas_sin_cohorte = {
+    persona["programa"]
+    for persona in sin_cohorte
+}
+
+
+# ----------------------------------
+# CONSTRUIR EL ARTEFACTO
+# ----------------------------------
+
+artefacto = {
+    "artefacto": "registro_cohortes",
+    "fuente": "ALTAS_PREVIAS + HOJA_NUEVAS",
+    "origen": ORIGEN_ALTAS,
+    "cohortes": {},
+    "rechazos": [],
+    "sin_cohorte": sin_cohorte,
+    "programas_sin_cohorte": programas_sin_cohorte
+}
+
+# Incorporar los datos de cada cohorte
+for codigo, cohorte in registro.items():
+    artefacto["cohortes"][codigo] = {
+        "programa": cohorte.programa,
+        "miembros": cohorte.miembros,
+        "total": cohorte.total()
+    }
+
+    # Juntar los rechazos de todas las cohortes
+    artefacto["rechazos"].extend(cohorte.rechazos)
+
+
+# ----------------------------------
+# COMPROBACIONES
+# ----------------------------------
+
+total_miembros = sum(c.total() for c in registro.values())
+total_rechazos = len(artefacto["rechazos"])
+total_sin_cohorte = len(sin_cohorte)
+total_entradas = len(todas)
+
+print("Miembros:", total_miembros)
+print("Rechazos:", total_rechazos)
+print("Sin cohorte:", total_sin_cohorte)
+print("Total clasificado:", total_miembros + total_rechazos + total_sin_cohorte)
+print("Total entradas:", total_entradas)
+
+print("\nCOHORTES:")
+for cohorte in registro.values():
+    print(cohorte)
